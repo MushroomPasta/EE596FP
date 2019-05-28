@@ -11,6 +11,7 @@ import numpy as np
 import copy
 import time
 import os
+import focal
 
 '''
 data: collections of videos[type:list(dict)]
@@ -29,10 +30,11 @@ def batch_generator(data, batch_size, seq_len):
             for i in range(batch_size):
                x = data[l+i]['video_matrix']
                X_list.append(x)
-               y = tf.broadcast_to(data[l+i]['labels'], shape=[300, 3862])
-               y_list.append(tf.cast(y, dtype=tf.float32))
-            X = tf.concat(X_list, axis=0)
-            Y = tf.reshape(tf.stack(y_list), shape=[-1, 3862])
+               y = np.broadcast_to(data[l+i]['labels'], shape=[300, 3862])
+               y_list.append(y.astype('float32'))
+            X = np.concatenate(X_list, axis=0)
+            Y = np.reshape(np.stack(y_list), (-1, 3862))
+#            print(np.shape(Y))
             yield X, Y
 
 
@@ -41,28 +43,29 @@ class Model():
        rnn_size is a list where each element is hidden_size of a layer
     '''
     def __init__(self, batch_size, seq_len, output_size, inp_size = 1024, rnn_size=[128, 128], num_layers=2, training=True, use_dropout=True, lr=0.001, dropout_rate=0.5):
-        self.batch_size =  batch_size
-        self.seq_len = seq_len
-        self.inp_size = inp_size
-        if training == False:
-            self.batch_size = 1
-            self.seq_len = 300
+#        with tf.Graph().as_default() as self.graph:
+            self.batch_size =  batch_size
+            self.seq_len = seq_len
+            self.inp_size = inp_size
+            if training == False:
+                self.batch_size = 1
+                self.seq_len = 300
         
-        self.output_size = output_size
-        self.rnn_size = rnn_size
-        self.num_layers = num_layers
-        self.training = training
-        self.use_dropout = use_dropout
-        self.dropout_rate = dropout_rate
-        self.lr = lr
+            self.output_size = output_size
+            self.rnn_size = rnn_size
+            self.num_layers = num_layers
+            self.training = training
+            self.use_dropout = use_dropout
+            self.dropout_rate = dropout_rate
+            self.lr = lr
        
-        tf.reset_default_graph()
-        self.X = tf.placeholder(dtype=tf.float32, shape=[self.batch_size, self.seq_len, self.inp_size])
-        self.y = tf.placeholder(dtype=tf.float32, shape=[self.batch_size * self.seq_len, self.output_size])
-        self.predict, self.loss = self.model(self.X, self.y)
-        optimizer = tf.train.AdamOptimizer(self.lr)
-        self.train_op = optimizer.minimize(self.loss)
-        self.saver = tf.train.Saver()
+            tf.reset_default_graph()
+            self.X = tf.placeholder(dtype=tf.float32, shape=[self.batch_size, self.seq_len, self.inp_size])
+            self.y = tf.placeholder(dtype=tf.float32, shape=[self.batch_size * self.seq_len, self.output_size])
+            self.predict, self.loss = self.model(self.X, self.y)
+            optimizer = tf.train.AdamOptimizer(self.lr)
+            self.train_op = optimizer.minimize(self.loss)
+            self.saver = tf.train.Saver()
         
     def rnn_cell(self, layer_num):
         return tf.nn.rnn_cell.BasicLSTMCell(self.rnn_size[layer_num])
@@ -99,8 +102,11 @@ class Model():
         return logits, prob
     
     def compute_loss(self, logits, y):
-        mean_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=y, logits=logits))
-        return mean_loss
+        logits_3d = tf.reshape(logits,shape = [-1,self.seq_len,self.output_size])
+        y_3d = tf.reshape(y,shape = [-1,self.seq_len,self.output_size])
+#        mean_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=y, logits=logits))*self.seq_len
+        
+        return focal.focal_loss(logits_3d,y_3d)
     
     def model(self, X, y):
         rnn_out, self.final_state = self.Recurrent_layers(X)
@@ -113,10 +119,12 @@ class Model():
         self.session = tf.Session()
         init = tf.global_variables_initializer()
         with self.session as sess:
+            
             sess.run(init)
             step = 0    
             new_state = sess.run(self.initial_state)
             for X_batch, y_batch in batch_generator:
+#                 X_batch, y_batch = sess.run([X_batch, y_batch])
                  step += 1
                  start = time.time()
                  new_state, loss_val, _ = sess.run([self.final_state, self.loss, self.train_op], feed_dict={self.X: X_batch, self.y: y_batch, self.initial_state: new_state})
@@ -129,13 +137,24 @@ class Model():
                     self.saver.save(sess, os.path.join(save_path, 'model'), global_step=step)
                  if step >= max_steps:
                     break
-        self.saver.save(sess, os.path.join(save_path, 'model'), global_step=step)
+            self.saver.save(sess, os.path.join(save_path, 'model'), global_step=step)
         
-    def predict(self, inp):
+    def predicts(self, inp):
          sess = self.session
          new_state = sess.run(self.initial_state)
          pred = sess.run(self.prob, feed_dict={self.X: inp, self.initial_state: new_state})
-         return np.argsort(pred, axis=-1)[-5:]
+         pred_res = np.zeros_like(pred[299])
+         pred_res[np.argsort(pred[299])[-5:]] = np.ones((5,))
+         return pred_res
+    
+    def accuracy(self, pred, y_test):
+        print(pred,y_test)
+        acc = 1-(np.count_nonzero(pred-y_test)/pred.shape[0])
+        tp = np.count_nonzero(np.logical_and(pred,y_test).astype(int))
+        fp = pred.shape[0]-np.count_nonzero((pred-y_test)-1)
+        fn = pred.shape[0]-np.count_nonzero((pred-y_test)+1)
+        return acc, tp, fp, fn
+            
      
     def load(self, checkpoint):
         self.session = tf.Session()
