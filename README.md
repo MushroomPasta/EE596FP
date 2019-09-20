@@ -16,9 +16,9 @@ We uses LSTM model to treat the input data as a sequence to obtain the feature i
 
 # Result
 We use 600000 videos to train our LSTM model and 10000 videos to test. Since the dataset is massive, we only train our model for 5 epochs with the learning rate of 0.001, batch size of 128, 0.05 of learning rate decay every 400000 examples and Adam optimizer. The total time used for training 5 epoch is over 12 hours. We uses three different indices to evaluate the performance of the model. GAP is the average precision on the top 20 labels per example. Hit@1 is the probability of the top 1 label being the ground truth label. PERR is the annotation precision when the same number of labels per video are retrieved as there are in the ground-truth.<br/> 
-[Logistic Regression](https://github.com/TianyiZhang0315/EE596FinalProject/blob/master/logistic.png)
-[LSTM](https://github.com/TianyiZhang0315/EE596FinalProject/blob/master/lstm.png)
-[NetVLAD](https://github.com/TianyiZhang0315/EE596FinalProject/blob/master/vald_4.png)
+![Logistic Regression](https://github.com/TianyiZhang0315/EE596FinalProject/blob/master/logistic.png)
+![LSTM](https://github.com/TianyiZhang0315/EE596FinalProject/blob/master/lstm.png)
+![NetVLAD](https://github.com/TianyiZhang0315/EE596FinalProject/blob/master/vald_4.png)
 [More details](https://github.com/TianyiZhang0315/EE596FinalProject/blob/master/FinalReport.pdf) 
 
 # Reference
